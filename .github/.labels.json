@@ -142,5 +142,17 @@
         "color": "5319e7",
         "default": false,
         "description": "User story"
+    },
+    {
+        "name": "implementation:ready",
+        "color": "0e8a16",
+        "default": false,
+        "description": "Ready for implementation by downstream workflows"
+    },
+    {
+        "name": "planning",
+        "color": "c5def5",
+        "default": false,
+        "description": "Planning and design phase"
     }
 ]

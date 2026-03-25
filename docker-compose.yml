@@ -1,0 +1,90 @@
+# docker-compose.yml for workflow-orchestration-queue
+# Local development environment with multi-service orchestration
+
+services:
+  # Notifier Service - "The Ear"
+  # FastAPI webhook receiver for GitHub events
+  notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: woq-notifier
+    ports:
+      - "8000:8000"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - woq-network
+    volumes:
+      - notifier-logs:/app/logs
+
+  # Sentinel Service - "The Brain"
+  # Background polling orchestrator
+  sentinel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: woq-sentinel
+    command: ["python", "-m", "src.orchestrator_sentinel"]
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO}
+      - SENTINEL_BOT_LOGIN=${SENTINEL_BOT_LOGIN}
+      - SENTINEL_POLL_INTERVAL=${SENTINEL_POLL_INTERVAL:-60}
+      - SENTINEL_HEARTBEAT_INTERVAL=${SENTINEL_HEARTBEAT_INTERVAL:-300}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      notifier:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - woq-network
+    volumes:
+      # Mount Docker socket for container orchestration
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Mount scripts for shell bridge execution
+      - ./scripts:/app/scripts:ro
+      - sentinel-logs:/app/logs
+    # Resource constraints to prevent runaway agents
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  # Redis (optional - for future distributed state)
+  # Uncomment if implementing distributed caching
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: woq-redis
+  #   ports:
+  #     - "6379:6379"
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #   restart: unless-stopped
+  #   networks:
+  #     - woq-network
+
+networks:
+  woq-network:
+    driver: bridge
+    name: woq-network
+
+volumes:
+  notifier-logs:
+    name: woq-notifier-logs
+  sentinel-logs:
+    name: woq-sentinel-logs
